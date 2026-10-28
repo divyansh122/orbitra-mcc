@@ -1,9 +1,9 @@
 import { DEFAULT_MAP_CENTER } from '../config'
 
 /**
- * Simulated transmitter. Produces JSON lines shaped like the real ESP8266 RX
- * output (including alias keys such as bmpAlt / gpsAlt) so demo data goes
- * through exactly the same parser as live data.
+ * Simulated transmitter. Produces JSON lines with exactly the keys the club's
+ * bridge.js forwards (packetNo, altitude = GPS, bmpAltitude, speed in km/h,
+ * gx/gy/gz, totalAcc…) so demo data goes through the same parser as live data.
  */
 export class DemoGenerator {
   private readonly start = Date.now()
@@ -14,6 +14,8 @@ export class DemoGenerator {
   private fixLostUntil = 0
   private nextFixLoss: number
   private nextGlitch: number
+  private packetNo = 0
+  private prev = { roll: 0, pitch: 0, yaw: 0, t: 0 }
 
   constructor() {
     this.nextGust = this.start + 18_000
@@ -25,6 +27,8 @@ export class DemoGenerator {
   next(): string {
     const now = Date.now()
     const t = (now - this.start) / 1000
+    // ESP-NOW drops the odd frame: skip a packet number now and then.
+    this.packetNo += Math.random() < 0.012 ? 2 : 1
 
     if (now >= this.nextGlitch) {
       this.nextGlitch = now + rand(45_000, 80_000)
@@ -82,27 +86,38 @@ export class DemoGenerator {
     const lat = DEFAULT_MAP_CENTER[0] + 0.0011 * Math.sin(w)
     const lon = DEFAULT_MAP_CENTER[1] + 0.0016 * Math.sin(w) * Math.cos(w)
 
-    const packet: Record<string, number | boolean> = {
+    const dt = this.prev.t ? t - this.prev.t : 0.1
+    const rate = (a: number, b: number) => (a - b) / Math.max(dt, 0.01) + noise(0.6)
+    const gx = rate(roll, this.prev.roll)
+    const gy = rate(pitch, this.prev.pitch)
+    const gz = rate(yaw, this.prev.yaw) % 180
+    this.prev = { roll, pitch, yaw, t }
+
+    // Same key order and types as the club's bridge.js output.
+    return JSON.stringify({
+      packetNo: this.packetNo,
+      timestamp: now,
       temperature: round(temperature, 2),
       humidity: round(humidity, 1),
-      pressure: round(pressure, 2),
-      bmpAlt: round(bmpAlt, 2),
       ax: round(ax, 3),
       ay: round(ay, 3),
       az: round(az, 3),
+      totalAcc: round(Math.hypot(ax, ay, az), 3),
+      gx: round(gx, 2),
+      gy: round(gy, 2),
+      gz: round(gz, 2),
       roll: round(roll, 2),
       pitch: round(pitch, 2),
-      yaw: round(yaw, 1),
       latitude: hasFix ? round(lat + noise(0.000004), 6) : 0,
       longitude: hasFix ? round(lon + noise(0.000004), 6) : 0,
-      gpsFix: hasFix,
-      sats: hasFix ? 8 + Math.round(2 * Math.sin(t / 19)) : Math.round(rand(0, 3)),
-    }
-    if (hasFix) {
-      packet.gpsAlt = round(alt + 3.5 + 1.8 * Math.sin(t / 9) + noise(0.8), 1)
-      packet.speed = round(Math.abs(9 * Math.cos(w)) + noise(0.2), 2)
-    }
-    return JSON.stringify(packet)
+      altitude: hasFix ? round(alt + 3.5 + 1.8 * Math.sin(t / 9) + noise(0.8), 1) : 0,
+      speed: hasFix ? round(Math.abs(32 * Math.cos(w)) + noise(0.7), 2) : 0,
+      satellites: hasFix ? 8 + Math.round(2 * Math.sin(t / 19)) : Math.round(rand(0, 3)),
+      gpsFix: hasFix ? 1 : 0,
+      bmpTemperature: round(temperature + 1.4 + noise(0.05), 2),
+      pressure: round(pressure, 2),
+      bmpAltitude: round(bmpAlt, 2),
+    })
   }
 }
 

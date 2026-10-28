@@ -7,7 +7,6 @@ import {
   loadSettings,
   saveSettings,
   urlParam,
-  type SensorGroup,
   type SeriesKey,
   type Settings,
 } from '../config'
@@ -46,6 +45,10 @@ interface TelemetryState {
   lastPacketAt: number | null
   firstPacketAt: number | null
   pps: number
+  /** Last transmitter packetNo seen, for ESP-NOW loss tracking. */
+  txLastPacketNo: number | null
+  txReceived: number
+  txLost: number
 
   latest: Sample
   stats: Partial<Record<SeriesKey, RunningStat>>
@@ -75,6 +78,8 @@ interface TelemetryState {
 }
 
 let seq = 0
+/** Larger packetNo jumps are treated as a counter glitch rather than real loss. */
+const MAX_COUNTED_GAP = 1000
 const arrivals: number[] = []
 const emptySensors = (): SensorSeen => ({ MPU: 0, BMP: 0, DHT: 0, GPS: 0 })
 
@@ -148,6 +153,9 @@ export const useTelemetry = create<TelemetryState>()((set, get) => {
     lastPacketAt: null,
     firstPacketAt: null,
     pps: 0,
+    txLastPacketNo: null,
+    txReceived: 0,
+    txLost: 0,
 
     latest: {},
     stats: {},
@@ -170,15 +178,28 @@ export const useTelemetry = create<TelemetryState>()((set, get) => {
 
       telemetryBuffer.push(now, sample)
 
+      // ESP-NOW loss: gaps in the transmitter's packetNo sequence.
+      let { txLastPacketNo, txReceived, txLost } = s
+      const pn = sample.packetNo
+      if (pn !== undefined) {
+        if (txLastPacketNo !== null && pn > txLastPacketNo) {
+          txLost += Math.min(pn - txLastPacketNo - 1, MAX_COUNTED_GAP)
+        } else if (txLastPacketNo !== null && pn < txLastPacketNo) {
+          logEvent('warn', `TRANSMITTER RESTART · PACKET #${txLastPacketNo} → #${pn}`)
+        }
+        txLastPacketNo = pn
+        txReceived++
+      }
+
       const stats = { ...s.stats }
       const sensorSeen = { ...s.sensorSeen }
       for (const key of SERIES_KEYS) {
         const v = sample[key]
         if (v === undefined) continue
         pushStat(stats, key, v)
-        const group: SensorGroup = FIELD_META[key].sensor
+        const group = FIELD_META[key].sensor
         // A GPS that reports "no fix" is still a live sensor.
-        sensorSeen[group] = now
+        if (group) sensorSeen[group] = now
       }
 
       // Keep last known values for fields this packet didn't carry (e.g. GPS during no-fix).
@@ -192,6 +213,9 @@ export const useTelemetry = create<TelemetryState>()((set, get) => {
         latest,
         stats,
         sensorSeen,
+        txLastPacketNo,
+        txReceived,
+        txLost,
         hadGpsFix: s.hadGpsFix || sample.gpsFix === 1,
         rawLog: [{ id: ++seq, t: now, text: raw, ok: true }, ...s.rawLog].slice(0, UI.rawLogSize),
       })
@@ -261,6 +285,9 @@ export const useTelemetry = create<TelemetryState>()((set, get) => {
         rawLog: [],
         alerts: {},
         pps: 0,
+        txLastPacketNo: null,
+        txReceived: 0,
+        txLost: 0,
       })
       logEvent('info', 'DATA CLEARED')
     },

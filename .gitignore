@@ -22,3 +22,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Club-provided archives (openMCT.zip is >100 MB, too big for GitHub)
+*.zip

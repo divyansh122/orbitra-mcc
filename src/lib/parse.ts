@@ -5,6 +5,7 @@ import {
   FIELD_KEYS,
   PRESSURE_PA_THRESHOLD,
   STANDARD_GRAVITY,
+  TOTAL_ACC_ALIASES,
 } from '../config/fields'
 import type { Sample } from '../types/telemetry'
 
@@ -116,6 +117,16 @@ export function extractSample(input: Obj): Sample | null {
       const value = field === 'gpsFix' ? toFlag(raw) : toNumber(raw)
       if (value !== undefined) {
         sample[field] = value
+        break
+      }
+    }
+  }
+
+  if (sample.ax === undefined || sample.ay === undefined || sample.az === undefined) {
+    for (const alias of TOTAL_ACC_ALIASES) {
+      const total = toNumber(getPath(src, alias))
+      if (total !== undefined) {
+        sample.gForce = total
         break
       }
     }

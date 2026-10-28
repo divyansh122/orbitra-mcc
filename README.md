@@ -26,7 +26,9 @@ For the demo itself, `npm run build && npm run preview` serves an optimized buil
 Order matters, and **both terminals stay open**:
 
 1. Plug in the **RX ESP8266** and close the Arduino Serial Monitor, since only one program can hold the COM port.
-2. Terminal 1, in the `bridge/` folder (a ready-made serial → WebSocket bridge ships with this repo):
+2. Terminal 1: start a bridge. Two work:
+   - **The club's bridge**, in `orbitra-telemetry-bridge/orbitra-telemetry-bridge/`. Set `SERIAL_PORT` at the top of `bridge.js`, then run `npm install` and `node bridge.js`. It forwards a packet only when **every** field is valid, so if one sensor fails (for example the BMP280), all data stops.
+   - **The bundled bridge**, in `bridge/` (shown below). It forwards every line unchanged and lets the dashboard handle missing fields. It also retries until the board is plugged in and recovers if the cable is pulled.
    ```bash
    cd bridge
    npm install
@@ -93,18 +95,42 @@ Other URL flags: `?noboot=1` skips the intro.
 | Map tiles (satellite / dark) | [`src/config/map.ts`](src/config/map.ts) |
 | Demo flight behaviour | [`src/lib/demo.ts`](src/lib/demo.ts) |
 
+### Data format
+
+The dashboard expects the packet the club's `bridge.js` sends, which is also what demo mode generates:
+
+```json
+{ "packetNo": 412, "timestamp": 1793180063230,
+  "temperature": 27.1, "humidity": 52.8,
+  "ax": 0.02, "ay": -0.01, "az": 0.99, "totalAcc": 0.99,
+  "gx": 1.5, "gy": -0.8, "gz": 12.3,
+  "roll": 3.1, "pitch": -2.4,
+  "latitude": 26.7612, "longitude": 83.3711, "altitude": 84.2,
+  "speed": 18.5, "satellites": 7, "gpsFix": 1,
+  "bmpTemperature": 31.2, "pressure": 998.7, "bmpAltitude": 120.4 }
+```
+
+| Key | Shown as |
+| --- | --- |
+| `altitude` | **GPS** altitude |
+| `bmpAltitude` | BMP280 altitude (kept separate from GPS altitude) |
+| `speed` | GPS ground speed in **km/h** |
+| `temperature` / `bmpTemperature` | DHT and BMP280 temperature, plotted together |
+| `gx` `gy` `gz` | Gyro rates (°/s), under the 3D attitude view |
+| `packetNo` | **ESP-NOW loss %** in the top bar (gaps in the transmitter's counter) |
+
 ### Field mapping
 
-Incoming keys are matched case-insensitively against alias lists. The first match wins:
+Incoming keys are matched case-insensitively against alias lists. The first match wins, and the first alias is always the club bridge's key:
 
 ```ts
 temperature: ['temperature', 'temp', 'tempC', 'dhtTemp', 't'],
-bmpAltitude: ['bmpAltitude', 'bmpAlt', 'baroAltitude', 'baroAlt', 'altitude', 'alt', ...],
-gpsAltitude: ['gpsAltitude', 'gpsAlt', 'gps.alt', 'gps.altitude'],
+bmpAltitude: ['bmpAltitude', 'bmpAlt', 'baroAltitude', 'baroAlt', ...],
+gpsAltitude: ['altitude', 'gpsAltitude', 'gpsAlt', 'alt', 'gps.alt', ...],
 latitude:    ['latitude', 'lat', 'gps.lat', 'gps.latitude'],
 ```
 
-- **GPS altitude and BMP280 altitude are always separate fields.** A bare `alt` or `altitude` counts as BMP280. Move those two aliases to `gpsAltitude` if your GPS is the one sending them.
+- **GPS altitude and BMP280 altitude are always separate fields.** A bare `altitude` or `alt` is GPS altitude, matching the club's sketch.
 - Pressure in Pa is converted to hPa automatically.
 - Acceleration in m/s² is converted to g automatically (`ACCEL_UNIT`).
 - `0,0` coordinates are treated as "no fix".

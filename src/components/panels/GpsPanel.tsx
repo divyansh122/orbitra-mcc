@@ -81,7 +81,7 @@ export function GpsPanel() {
             <span>SPD · DIST</span>
             <span className="text-[0.82rem] text-ink">
               {formatNumber(speed, 1)}
-              <span className="text-[0.6rem] text-dim"> m/s · </span>
+              <span className="text-[0.6rem] text-dim"> km/h · </span>
               {distance >= 1000 ? `${(distance / 1000).toFixed(2)}` : distance.toFixed(0)}
               <span className="text-[0.6rem] text-dim">{distance >= 1000 ? ' km' : ' m'}</span>
             </span>
@@ -114,7 +114,7 @@ interface MapViewProps {
 function MapView({ follow, layer, hasFix, onDistance }: MapViewProps) {
   const hostRef = useRef<HTMLDivElement>(null)
   const followRef = useRef(follow)
-  const markerRef = useRef<L.Marker | null>(null)
+  const hasFixRef = useRef(hasFix)
   const [map, setMap] = useState<L.Map | null>(null)
 
   useEffect(() => {
@@ -132,7 +132,7 @@ function MapView({ follow, layer, hasFix, onDistance }: MapViewProps) {
   }, [follow])
 
   useEffect(() => {
-    markerRef.current?.getElement()?.querySelector('.gps-marker')?.setAttribute('data-nofix', String(!hasFix))
+    hasFixRef.current = hasFix
   }, [hasFix])
 
   useEffect(() => {
@@ -164,7 +164,6 @@ function MapView({ follow, layer, hasFix, onDistance }: MapViewProps) {
       interactive: false,
       opacity: 0,
     }).addTo(map)
-    markerRef.current = marker
 
     let drawn = 0
     let epoch = telemetryBuffer.trackEpoch
@@ -172,6 +171,8 @@ function MapView({ follow, layer, hasFix, onDistance }: MapViewProps) {
     let centered = false
 
     const sync = () => {
+      // Applied every tick: the marker element may not exist yet when the fix state first changes.
+      marker.getElement()?.querySelector('.gps-marker')?.setAttribute('data-nofix', String(!hasFixRef.current))
       const track = telemetryBuffer.track
       if (epoch !== telemetryBuffer.trackEpoch || track.length < drawn) {
         epoch = telemetryBuffer.trackEpoch
@@ -218,7 +219,6 @@ function MapView({ follow, layer, hasFix, onDistance }: MapViewProps) {
       ro.disconnect()
       setMap(null)
       map.remove()
-      markerRef.current = null
     }
   }, [onDistance])
 

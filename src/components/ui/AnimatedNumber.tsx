@@ -24,9 +24,16 @@ export function AnimatedNumber({ value, decimals, className, duration = 0.45 }: 
     if (!hasValue && ref.current) ref.current.textContent = '—'
   }, [hasValue])
 
+  const shownRef = useRef(false)
+
   useEffect(() => {
-    if (!hasValue) return
-    if (reduce) {
+    if (!hasValue) {
+      shownRef.current = false
+      return
+    }
+    // A value appearing from "—" is shown at once; only changes after that are tweened.
+    if (reduce || !shownRef.current || mv.get() === value) {
+      shownRef.current = true
       mv.jump(value)
       if (ref.current) ref.current.textContent = formatNumber(value, decimals)
       return

@@ -101,6 +101,10 @@ function LinkStatusPill() {
   )
 }
 
+/** Packet-loss colour bands for the ESP-NOW link, in %. */
+const LOSS_WARN_PCT = 2
+const LOSS_ALERT_PCT = 10
+
 function Metric({ label, children, accent }: { label: string; children: ReactNode; accent?: string }) {
   return (
     <div className="min-w-[4.2rem] leading-none">
@@ -118,14 +122,21 @@ function Metrics() {
   const lastPacketAt = useTelemetry((s) => s.lastPacketAt)
   const firstPacketAt = useTelemetry((s) => s.firstPacketAt)
   const staleMs = useTelemetry((s) => s.settings.thresholds.staleMs)
+  const txReceived = useTelemetry((s) => s.txReceived)
+  const txLost = useTelemetry((s) => s.txLost)
   const now = useNow(100)
   const age = lastPacketAt === null ? null : now - lastPacketAt
+  const lossPct = txReceived ? (txLost / (txReceived + txLost)) * 100 : null
+  const lossColor = lossPct === null ? undefined : lossPct > LOSS_ALERT_PCT ? 'var(--color-red)' : lossPct > LOSS_WARN_PCT ? 'var(--color-amber)' : 'var(--color-green)'
 
   return (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-line/60 xl:border-l xl:pl-5">
       <Metric label="Packets">{packetCount.toLocaleString()}</Metric>
       <Metric label="Pkt / s" accent="var(--color-cyan)">
         {pps.toFixed(1)}
+      </Metric>
+      <Metric label="ESP-NOW loss" accent={lossColor}>
+        <span title={`${txLost} packets missing from the transmitter's packetNo sequence`}>{lossPct === null ? '—' : `${lossPct.toFixed(1)}%`}</span>
       </Metric>
       <Metric label="Last pkt" accent={age !== null && age > staleMs ? 'var(--color-red)' : undefined}>
         {formatAge(age)}
