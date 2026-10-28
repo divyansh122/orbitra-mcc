@@ -1,0 +1,16 @@
+{
+  "name": "orbitra-bridge",
+  "private": true,
+  "version": "1.0.0",
+  "description": "ORBITRA'26 serial → WebSocket bridge (ESP8266 RX → ws://localhost:8081)",
+  "main": "bridge.js",
+  "scripts": {
+    "start": "node bridge.js",
+    "ports": "node bridge.js --list"
+  },
+  "dependencies": {
+    "@serialport/parser-readline": "^13.0.0",
+    "serialport": "^13.0.0",
+    "ws": "^8.18.0"
+  }
+}
